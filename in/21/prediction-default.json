@@ -1,0 +1,7 @@
+{
+    "**DISCLAIMER**": "Do not use this prediction for self-diagnosis. You should check with your local authorities for the latest advice on seeking medical assistance.",
+    "prediction": "COVID-19",
+    "Normal": "0.00048430308",
+    "Pneumonia": "0.0107234",
+    "COVID-19": "0.98879224"
+}
