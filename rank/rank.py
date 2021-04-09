@@ -12,7 +12,7 @@ from chrisapp.base import ChrisApp
 import os
 import json
 from collections import OrderedDict
-
+from functools import cmp_to_key
 
 Gstr_title = r"""
 
@@ -126,39 +126,86 @@ class Rank(ChrisApp):
         folders = os.listdir(options.inputdir)
         severity_files = []
         safe_files = []
-        # print(folders)
+        prediction_filename = 'prediction-default.json'
+        predictions = {}
+        print(folders)
         for folder in folders:
-            if '.' not in folder:
-                files = os.listdir(options.inputdir + "/" + folder)
-            else:
+            if os.path.isdir(folder):
                 continue
-            issafe = 1
-            for f in files:
-                if "severity" in f:
-                    if "._" not in f:
-                        issafe = 0
-                        severity_files.append(folder + '/' + f)
-            if issafe:
-                safe_files.append(folder)
+            prediction_path = os.path.join(options.inputdir, folder, prediction_filename)
+            if not os.path.exists(prediction_path):
+                continue
+            f = open(prediction_path, 'r')
+            prediction = json.load(f)
+            f.close()
+            predictions[folder] = prediction
+            prediction['instance_id'] = folder
+
+            if prediction['prediction'] == 'COVID-19':
+                severity_filename = os.path.join(options.inputdir, folder, 'severity.json')
+                f = open(severity_filename, 'r')
+                severity = json.load(f)
+                f.close()
+                prediction['severity'] = severity
+        from pprint import pprint
 
 
-        patients_severity = {}
-        for file in severity_files:
-            with open(options.inputdir + "/" + file) as f:
-                temp = json.load(f)
-            with open(options.outputdir + "/" + file.replace('/', '_'), "w") as f:
-                json.dump(temp, f,indent=6)
-            patients_severity[file] = int(temp["Geographic severity"]) + int(temp["Opacity severity"])
+        predictions_list = list(predictions.values())
+        def compare(instance_a, instance_b):
+            a_type = instance_a['prediction']
+            b_type = instance_b['prediction']
+            t = ''
+            t += a_type[0].upper()
+            t += a_type[1:]
+            a_type = t
+            t = ''
+            t += b_type[0].upper()
+            t += b_type[1:]
+            b_type = t
+            if a_type == b_type:
+                if a_type == 'COVID-19':
+                    severity_a = instance_a['severity']['Geographic severity'] + instance_a['severity']['Opacity severity']
+                    severity_b = instance_b['severity']['Geographic severity'] + instance_b['severity']['Opacity severity']
+                    value_cmp_a = severity_a
+                    value_cmp_b = severity_b
+                else:   
+                    value_cmp_a = instance_a[a_type]
+                    value_cmp_b = instance_b[b_type]
+                if value_cmp_a < value_cmp_b:
+                    return 1
+                return -1
 
-        patients_severity_sorted = OrderedDict(sorted(patients_severity.items(), key=lambda x: x[1], reverse=True))
 
-        patients_severity_sorted["safe patients"] = safe_files
-        print(patients_severity_sorted)
-        with open(options.outputdir + "/ranking_result.json", "w") as f:
-            json.dump(patients_severity_sorted, f, indent=6)   
-        print(Gstr_title)
-        print('Version: %s' % self.get_version())
+            if a_type == 'COVID-19':
+                return -1
 
+            if b_type == 'COVID-19':
+                return 1
+
+            if a_type == 'Pneumonia':
+                return -1
+
+            if b_type == 'Pneumonia':
+                return 1
+            return -1
+        ranking = sorted(predictions_list, key=cmp_to_key(compare))
+        # pprint(ranking)
+
+        # clear outpath 
+        os.system('rm -rf %s/*' % options.outputdir)
+        # output
+        with open(options.outputdir + "/0000-ranking_result.json", "w") as f:
+            json.dump(ranking,f,indent=6)
+        import shutil 
+        counter=0
+        for patient in ranking:
+            # pprint (file['instance_id'])
+            counter += 1
+            # src = 'options.inputdir/'+ patient['instance_id']
+            # dest= 'options.outputdir/'+str(counter)+'/'+patient['instance_id']
+            src = os.path.join(options.inputdir, patient['instance_id']) 
+            dest= os.path.join(options.outputdir, '%04d-%s' % (counter, patient['instance_id'])) 
+            shutil.copytree(src, dest)
     def show_man_page(self):
         """
         Print the app's man page.
